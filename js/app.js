@@ -364,35 +364,33 @@
   });
 
   // Export / Import（手動同期）
-  btnExport?.addEventListener("click", () => {
+btnExport.onclick = () => {
   const data = Store.exportAll();
   if (!data) return alert("データがありません");
+
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+
+  const filename =
+    `lab_os_backup_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
+
+  console.log("export filename:", filename); // ←確認用
 
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-
-  // ▼ 日付生成
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const filename =
-    `lab_os_backup_${now.getFullYear()}`
-    + `${pad(now.getMonth()+1)}`
-    + `${pad(now.getDate())}_`
-    + `${pad(now.getHours())}`
-    + `${pad(now.getMinutes())}`
-    + `${pad(now.getSeconds())}.json`;
 
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
+  a.remove();
 
   URL.revokeObjectURL(url);
-});
-
+};
+  
   fileImport?.addEventListener("change", async () => {
     const file = fileImport.files?.[0];
     if (!file) return;
@@ -415,5 +413,6 @@
   window.addEventListener("hashchange", navigate);
   navigate();
 })();
+
 
 
