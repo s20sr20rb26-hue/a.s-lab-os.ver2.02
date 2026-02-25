@@ -16,11 +16,10 @@
 
     <input id="globalSearch" class="search" placeholder="検索（プロトコル/試薬/当番）" />
 
-    <button id="btnNew" class="btn primary">＋新規</button>
+    <!-- ＋新規は削除 -->
 
     <button id="btnExport" class="btn">Export</button>
 
-    <!-- Importはスマホで確実に動くlabel方式 -->
     <label class="btn">
       Import
       <input id="fileImport" type="file" accept="application/json" style="display:none;">
@@ -29,6 +28,7 @@
 
   <nav class="tabs">
     <a href="#/protocol" data-tab="protocol">プロトコル</a>
+    <a href="#/cell" data-tab="cell">細胞</a>
     <a href="#/reagent" data-tab="reagent">試薬</a>
     <a href="#/duty" data-tab="duty">当番</a>
     <a href="#/run" data-tab="run">Run</a>
@@ -37,11 +37,10 @@
 
   <main id="app" class="container"></main>
 
-  <!-- JS（順番重要！） -->
-  <script src="js/router.js?v=20260222_1"></script>
-  <script src="js/link.js?v=20260222_1"></script>
-  <script src="js/store.js?v=20260222_1"></script>
-  <script src="js/render.js?v=20260222_1"></script>
-  <script src="js/app.js?v=20260222_1"></script>
+  <script src="js/router.js?v=20260225_1"></script>
+  <script src="js/link.js?v=20260225_1"></script>
+  <script src="js/store.js?v=20260225_1"></script>
+  <script src="js/render.js?v=20260225_1"></script>
+  <script src="js/app.js?v=20260225_1"></script>
 </body>
 </html>
