@@ -1,4 +1,4 @@
-// js/render.js（表示/編集/Run）
+// js/render.js（Cell：継代メモ/日時の後編集対応）
 (function () {
   function setActiveTab(tab) {
     document.querySelectorAll(".tabs a").forEach(a => a.classList.remove("active"));
@@ -10,14 +10,24 @@
     const d = new Date(ts);
     return d.toLocaleString("ja-JP");
   }
-
   function fmtHM(ts) {
     const d = new Date(ts);
     return d.toLocaleString("ja-JP", { hour12: false });
   }
+  function toDatetimeLocal(ts) {
+    const d = new Date(ts);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
 
   function label(type) {
-    return ({ protocol: "プロトコル", reagent: "試薬", duty: "当番", run: "Run" })[type] || type;
+    return ({
+      protocol: "プロトコル",
+      reagent: "試薬",
+      duty: "当番",
+      run: "Run",
+      cell: "細胞"
+    })[type] || type;
   }
 
   function escapeHtml(s) {
@@ -26,9 +36,7 @@
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
   }
-  function escapeAttr(s) {
-    return escapeHtml(s).replaceAll('"', "&quot;");
-  }
+  function escapeAttr(s) { return escapeHtml(s).replaceAll('"',"&quot;"); }
 
   function wikiInline(text) {
     const esc = (s) => (s || "")
@@ -77,7 +85,7 @@
     `;
   }
 
-  // --- Reagent meta ---
+  // ===== Reagent meta =====
   function getReagentMeta(p) {
     const m = p.metaReagent;
     if (!m || typeof m !== "object") return { composition: [] };
@@ -90,11 +98,7 @@
     return `
       <div style="overflow-x:auto;">
         <table cellpadding="6">
-          <tr>
-            <th>薬品</th>
-            <th>量</th>
-            <th>場所</th>
-          </tr>
+          <tr><th>薬品</th><th>量</th><th>場所</th></tr>
           ${rows.map(r => `
             <tr>
               <td>${wikiInline(r.name || "")}</td>
@@ -111,16 +115,13 @@
     return `
       <div class="card" style="padding:10px;">
         <div class="row">
-          <label>
-            薬品名
+          <label>薬品名
             <input class="comp-name" data-i="${i}" value="${escapeAttr(name || "")}" placeholder="例：FBS / [[DMEM]]" />
           </label>
-          <label>
-            量
+          <label>量
             <input class="comp-amount" data-i="${i}" value="${escapeAttr(amount || "")}" placeholder="例：50 mL" />
           </label>
-          <label>
-            場所
+          <label>場所
             <input class="comp-location" data-i="${i}" value="${escapeAttr(location || "")}" placeholder="例：-20℃ / 冷蔵庫2段目" />
           </label>
         </div>
@@ -143,7 +144,66 @@
     }).filter(r => r.name || r.amount || r.location);
   }
 
-  // --- Detail ---
+  // ===== Cell meta =====
+  function getCellMeta(p) {
+    const m = p.metaCell;
+    if (!m || typeof m !== "object") {
+      return { adhesion: "付着", medium: "", passageTiming: "", passages: [] };
+    }
+    return {
+      adhesion: m.adhesion || "付着",
+      medium: m.medium || "",
+      passageTiming: m.passageTiming || "",
+      passages: Array.isArray(m.passages) ? m.passages : []
+    };
+  }
+
+  function cellInfoTable(meta) {
+    return `
+      <div style="overflow-x:auto;">
+        <table cellpadding="6">
+          <tr><th>細胞の性質</th><td>${escapeHtml(meta.adhesion)}</td></tr>
+          <tr><th>培地</th><td>${wikiInline(meta.medium)}</td></tr>
+          <tr><th>継代タイミング</th><td>${escapeHtml(meta.passageTiming)}</td></tr>
+        </table>
+      </div>
+    `;
+  }
+
+  // ★ここが「後から編集」対応（日時+メモ+保存）
+  function passageTable(passages) {
+    if (!passages.length) return `<div class="small">まだ継代記録がありません</div>`;
+    return `
+      <div style="overflow-x:auto;">
+        <table cellpadding="6">
+          <tr><th>#</th><th>日時</th><th>メモ</th><th></th></tr>
+          ${passages.map((x, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>
+                <input type="datetime-local"
+                  class="pass-at"
+                  data-i="${i}"
+                  value="${escapeAttr(toDatetimeLocal(x.at || Date.now()))}" />
+              </td>
+              <td>
+                <input class="pass-note"
+                  data-i="${i}"
+                  value="${escapeAttr(x.note || "")}"
+                  placeholder="例：1:5、状態良い、P12 など" />
+              </td>
+              <td style="white-space:nowrap;">
+                <button class="btn pass-save" data-i="${i}">保存</button>
+                <button class="btn" data-del-pass="${i}">削除</button>
+              </td>
+            </tr>
+          `).join("")}
+        </table>
+      </div>
+    `;
+  }
+
+  // ===== Detail pages =====
   function renderPageDetail(id) {
     const p = Store.getPage(id);
     if (!p) return `<div class="card">見つかりません</div>`;
@@ -151,9 +211,25 @@
     setActiveTab(p.type);
     const tags = (p.tags || []).map(t => `<span class="pill">${escapeHtml(t)}</span>`).join("");
 
-    if (p.type === "reagent") {
-      const meta = getReagentMeta(p);
-      const methodHtml = p.body ? Link.wikiToHtml(p.body) : `<div class="small">未登録</div>`;
+    // Cell detail
+    if (p.type === "cell") {
+      const meta = getCellMeta(p);
+      const runs = Store.listRunsByCellId(p.id);
+
+      const runsHtml = runs.length ? `
+        <div class="list">
+          ${runs.map(r => `
+            <div class="card">
+              <h3><a href="#/run/${r.id}">${escapeHtml(r.protocolTitleSnapshot || "Run")}</a></h3>
+              <div class="meta">
+                <span>${r.finishedAt ? "完了" : "進行中"}</span>
+                <span>開始: ${fmtHM(r.startedAt)}</span>
+              </div>
+              <div class="small">${escapeHtml(r.notes || "")}</div>
+            </div>
+          `).join("")}
+        </div>
+      ` : `<div class="small">この細胞に紐付いたRunはまだありません（Run詳細で細胞を選ぶと紐付きます）</div>`;
 
       const html = `
         <div class="row">
@@ -176,10 +252,64 @@
 
         <div id="pageBody">
           <div class="card">
+            <h3>【細胞情報】</h3>
+            ${cellInfoTable(meta)}
+          </div>
+
+          <div class="card">
+            <h3>【継代】</h3>
+            <div class="row">
+              <label>日時（追加用）
+                <input id="passAt" type="datetime-local" />
+              </label>
+              <label>メモ（追加用）
+                <input id="passNote" placeholder="例：1:5、状態良い など" />
+              </label>
+              <div style="align-self:end; text-align:right; min-width:180px;">
+                <button class="btn primary" id="btnAddPass">＋継代記録</button>
+              </div>
+            </div>
+            ${passageTable(meta.passages)}
+            <div class="small">※ 行を編集したら「保存」を押して反映</div>
+          </div>
+
+          <div class="card">
+            <h3>【実験】</h3>
+            <div class="small">Run（実験記録）側で「使用細胞」を選ぶと、ここに自動で一覧が出ます。</div>
+            <hr>
+            ${runsHtml}
+          </div>
+        </div>
+      `;
+      return { html, page: p };
+    }
+
+    // Reagent detail
+    if (p.type === "reagent") {
+      const meta = getReagentMeta(p);
+      const methodHtml = p.body ? Link.wikiToHtml(p.body) : `<div class="small">未登録</div>`;
+      const html = `
+        <div class="row">
+          <div>
+            <h2>${escapeHtml(p.title)}</h2>
+            <div class="meta">
+              <span>${label(p.type)}</span>
+              <span>更新: ${fmtTime(p.updatedAt)}</span>
+            </div>
+            <div class="pills">${tags}</div>
+          </div>
+          <div style="text-align:right; min-width:240px;">
+            <button class="btn" id="btnFav">${p.favorite ? "★ お気に入り解除" : "☆ お気に入り"}</button>
+            <a class="btn" href="#/edit/${p.id}">編集</a>
+            <button class="btn" id="btnDel">削除</button>
+          </div>
+        </div>
+        <hr>
+        <div id="pageBody">
+          <div class="card">
             <h3>【組成】</h3>
             ${renderCompositionTable(meta.composition)}
           </div>
-
           <div class="card">
             <h3>【調製法】</h3>
             <div>${methodHtml}</div>
@@ -189,6 +319,7 @@
       return { html, page: p };
     }
 
+    // default (protocol/duty)
     const bodyHtml = Link.wikiToHtml(p.body || "");
     const html = `
       <div class="row">
@@ -215,7 +346,7 @@
     return { html, page: p };
   }
 
-  // --- Editor with templates ---
+  // ===== Editor =====
   function renderEditor(mode, id, preset) {
     const p = mode === "edit"
       ? Store.getPage(id)
@@ -237,29 +368,24 @@
       <h2>${mode === "edit" ? "編集" : "新規作成"}</h2>
       <div class="card">
         <div class="row">
-          <label>
-            種類
+          <label>種類
             <select id="fType">
-              ${["protocol", "reagent", "duty"].map(t => `
-                <option value="${t}" ${p.type === t ? "selected" : ""}>${label(t)}</option>
+              ${["protocol","cell","reagent","duty"].map(t => `
+                <option value="${t}" ${p.type===t?"selected":""}>${label(t)}</option>
               `).join("")}
             </select>
           </label>
-
-          <label>
-            タイトル（=名前）
+          <label>タイトル（=名前）
             <input id="fTitle" value="${escapeAttr(p.title)}" />
           </label>
         </div>
 
         <div class="row">
-          <label>
-            別名（カンマ区切り）
-            <input id="fAliases" value="${escapeAttr((p.aliases || []).join(", "))}" />
+          <label>別名（カンマ区切り）
+            <input id="fAliases" value="${escapeAttr((p.aliases||[]).join(", "))}" />
           </label>
-          <label>
-            タグ（カンマ区切り）
-            <input id="fTags" value="${escapeAttr((p.tags || []).join(", "))}" />
+          <label>タグ（カンマ区切り）
+            <input id="fTags" value="${escapeAttr((p.tags||[]).join(", "))}" />
           </label>
         </div>
     `;
@@ -267,7 +393,7 @@
     const commonBottom = `
         <div class="row">
           <label style="min-width:220px;">
-            <input type="checkbox" id="fFav" ${p.favorite ? "checked" : ""} />
+            <input type="checkbox" id="fFav" ${p.favorite ? "checked":""} />
             お気に入り
           </label>
           <div style="text-align:right; min-width:240px;">
@@ -278,50 +404,76 @@
       </div>
     `;
 
-    // reagent form
-    if (p.type === "reagent") {
-      const meta = getReagentMeta(p);
-      const rows = meta.composition || [];
-      const compRowsHtml = rows.length
-        ? rows.map((r, i) => reagentRowHtml(i, r.name, r.amount, r.location)).join("")
-        : reagentRowHtml(0, "", "", "");
-
+    if (p.type === "cell") {
+      const m = (p.metaCell || {});
+      const adhesion = m.adhesion || "付着";
+      const medium = m.medium || "";
+      const passageTiming = m.passageTiming || "";
       const html = `
         ${commonTop}
 
         <hr>
-        <h3>【組成】</h3>
-        <div class="small">薬品 / 量 / 場所を入力（行は追加できます）</div>
-        <div class="card" style="border:1px solid var(--bd);">
-          <div id="compRows" class="list" style="gap:8px;">
-            ${compRowsHtml}
-          </div>
-          <div style="margin-top:10px; display:flex; gap:8px; justify-content:flex-end;">
-            <button class="btn" id="btnAddRow" type="button">＋ 行を追加</button>
-          </div>
+        <h3>【細胞情報】</h3>
+        <div class="row">
+          <label>細胞の性質
+            <select id="cellAdh">
+              <option value="付着" ${adhesion==="付着"?"selected":""}>付着</option>
+              <option value="浮遊" ${adhesion==="浮遊"?"selected":""}>浮遊</option>
+            </select>
+          </label>
+          <label>培地（名前）
+            <input id="cellMedium" value="${escapeAttr(medium)}" placeholder="例：DMEM + 10%FBS" />
+          </label>
         </div>
 
-        <h3>【調製法】</h3>
-        <div class="small">自由に書いてOK（[[リンク]]も使える）</div>
-        <label>
-          <textarea id="fMethod">${escapeHtml(p.body || "")}</textarea>
-        </label>
+        <div class="row">
+          <label>継代のタイミング
+            <input id="cellPassTiming" value="${escapeAttr(passageTiming)}" placeholder="例：80% confluentで1:5、2-3日に1回" />
+          </label>
+        </div>
+
+        <div class="small">※ 継代の日時ログは詳細ページで追加・編集できます。</div>
 
         ${commonBottom}
       `;
       return { html, page: p };
     }
 
-    // protocol/duty template
+    if (p.type === "reagent") {
+      const meta = getReagentMeta(p);
+      const rows = meta.composition || [];
+      const compRowsHtml = rows.length
+        ? rows.map((r,i)=>reagentRowHtml(i, r.name, r.amount, r.location)).join("")
+        : reagentRowHtml(0,"","","");
+      const html = `
+        ${commonTop}
+
+        <hr>
+        <h3>【組成】</h3>
+        <div class="card">
+          <div id="compRows" class="list" style="gap:8px;">
+            ${compRowsHtml}
+          </div>
+          <div style="margin-top:10px; text-align:right;">
+            <button class="btn" id="btnAddRow" type="button">＋ 行を追加</button>
+          </div>
+        </div>
+
+        <h3>【調製法】</h3>
+        <label><textarea id="fMethod">${escapeHtml(p.body || "")}</textarea></label>
+
+        ${commonBottom}
+      `;
+      return { html, page: p };
+    }
+
     const template =
       (p.type === "protocol")
         ? `## 目的
-（なにを確認する？）
 
 ## 準備物
 - [[試薬A]]
 - [[試薬B]]
-- 器具など
 
 ## 手順
 1.
@@ -337,57 +489,35 @@
         : `## 手順
 1.
 2.
-3.
 
 ## 注意
 - 
 `;
-
     const showTemplate = !(p.body && p.body.trim().length > 0);
 
     const html = `
       ${commonTop}
-
       <label>
         本文（Markdown風 + [[リンク]]）
         <textarea id="fBody">${escapeHtml(showTemplate ? template : (p.body || ""))}</textarea>
       </label>
-
-      <div class="small">
-        ヒント：本文に <b>[[試薬名]]</b> を書くとリンクになります（存在しなければ試薬として作成できます）。
-      </div>
-
       ${commonBottom}
     `;
     return { html, page: p };
   }
 
-  // --- Search ---
-  function renderSearch(q) {
-    setActiveTab("search");
-    const results = q ? Store.search(q) : [];
-    return `
-      <h2>検索</h2>
-      <div class="small">タイトル/別名/タグ/本文を横断検索します。</div>
-      <hr>
-      <div class="list">
-        ${results.map(pageCard).join("") || `<div class="small">${q ? "見つかりません" : "検索語を入力してください"}</div>`}
-      </div>
-    `;
-  }
-
-  // --- Runs ---
+  // ===== Run list/detail =====
   function runCard(r) {
-    const p = r.protocolId ? Store.getPage(r.protocolId) : null;
-    const title = p ? p.title : (r.protocolTitleSnapshot || "(プロトコル未指定)");
+    const title = r.protocolTitleSnapshot || "Run";
     const status = r.finishedAt ? "完了" : "進行中";
+    const cellTitle = r.cellId ? (Store.getPage(r.cellId)?.title || "") : "";
     return `
       <div class="card">
         <h3><a href="#/run/${r.id}">${escapeHtml(title)}</a></h3>
         <div class="meta">
           <span>${status}</span>
           <span>開始: ${fmtHM(r.startedAt)}</span>
-          <span>${r.finishedAt ? "終了: " + fmtHM(r.finishedAt) : ""}</span>
+          ${cellTitle ? `<span>細胞: ${escapeHtml(cellTitle)}</span>` : ""}
         </div>
         <div class="small">${escapeHtml(r.notes || "")}</div>
       </div>
@@ -414,9 +544,12 @@
     const run = Store.getRun(runId);
     if (!run) return `<div class="card">Runが見つかりません</div>`;
 
-    const p = run.protocolId ? Store.getPage(run.protocolId) : null;
-    const title = p ? p.title : (run.protocolTitleSnapshot || "(プロトコル未指定)");
     const blocks = (run.plan?.blocks || []);
+    const cells = Store.listPages("cell");
+
+    const cellOptions = [`<option value="">（未設定）</option>`].concat(
+      cells.map(c => `<option value="${c.id}" ${run.cellId===c.id?"selected":""}>${escapeHtml(c.title)}</option>`)
+    ).join("");
 
     const blocksHtml = `
       <div class="card">
@@ -424,16 +557,10 @@
         ${blocks.length ? `
           <div style="overflow-x:auto;">
             <table cellpadding="6">
-              <tr>
-                <th>#</th>
-                <th>内容</th>
-                <th>開始</th>
-                <th>終了</th>
-                <th></th>
-              </tr>
-              ${blocks.map((b, i) => `
+              <tr><th>#</th><th>内容</th><th>開始</th><th>終了</th><th></th></tr>
+              ${blocks.map((b,i)=>`
                 <tr>
-                  <td>${i + 1}</td>
+                  <td>${i+1}</td>
                   <td>${escapeHtml(b.label || "Incubate")}</td>
                   <td>${fmtHM(b.startAt)}</td>
                   <td>${fmtHM(b.endAt)}</td>
@@ -451,12 +578,11 @@
         <div>
           <h2>Run</h2>
           <div class="meta">
-            <span>プロトコル: ${escapeHtml(title)}</span>
+            <span>プロトコル: ${escapeHtml(run.protocolTitleSnapshot || "Run")}</span>
             <span>${run.finishedAt ? "完了" : "進行中"}</span>
           </div>
         </div>
         <div style="text-align:right; min-width:280px;">
-          ${p ? `<a class="btn" href="#/page/${p.id}">プロトコルへ</a>` : ""}
           <button class="btn" id="btnFinishRun">${run.finishedAt ? "完了解除" : "完了にする"}</button>
           <button class="btn" id="btnDelRun">Run削除</button>
         </div>
@@ -465,37 +591,45 @@
       <hr>
 
       <div class="card">
-        <h3>🕒 開始時刻（基準）</h3>
+        <h3>🧫 使用細胞</h3>
         <div class="row">
-          <label>
-            開始時刻
-            <input id="runStart" type="datetime-local" />
+          <label>細胞
+            <select id="runCell">${cellOptions}</select>
           </label>
-          <div style="align-self:end; text-align:right;">
-            <button class="btn primary" id="btnSetStart">保存</button>
+          <div style="align-self:end; text-align:right; min-width:180px;">
+            <button class="btn primary" id="btnSaveCell">保存</button>
           </div>
         </div>
-        <div class="small">インキュベート区間の開始/終了を、この時刻から積み上げて管理できます。</div>
+        <div class="small">ここで選んだ細胞が「細胞ページ」の【実験】に表示されます。</div>
       </div>
 
       <div class="card">
-        <h3>➕ インキュベート区間を追加</h3>
+        <h3>🕒 開始時刻（基準）</h3>
         <div class="row">
-          <label>
-            ラベル
+          <label>開始時刻
+            <input id="runStart" type="datetime-local" />
+          </label>
+          <div style="align-self:end; text-align:right; min-width:180px;">
+            <button class="btn primary" id="btnSetStart">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>➕ インキュベート区間</h3>
+        <div class="row">
+          <label>ラベル
             <input id="blkLabel" placeholder="例：培養（TMZ処理）" />
           </label>
-          <label>
-            継続時間（時間）
+          <label>継続時間（時間）
             <input id="blkHours" type="number" step="0.1" placeholder="例：24" />
           </label>
         </div>
         <div class="row">
-          <label>
-            開始時刻（空なら直前の終了 or 開始時刻）
+          <label>開始時刻（空なら直前の終了 or 開始時刻）
             <input id="blkStart" type="datetime-local" />
           </label>
-          <div style="align-self:end; text-align:right;">
+          <div style="align-self:end; text-align:right; min-width:180px;">
             <button class="btn primary" id="btnAddBlock">追加</button>
           </div>
         </div>
@@ -505,7 +639,7 @@
 
       <div class="card">
         <h3>📝 メモ</h3>
-        <textarea id="runNotes" placeholder="結果、トラブル、条件など">${escapeHtml(run.notes || "")}</textarea>
+        <textarea id="runNotes">${escapeHtml(run.notes || "")}</textarea>
         <div style="text-align:right; margin-top:10px;">
           <button class="btn primary" id="btnSaveNotes">メモ保存</button>
         </div>
@@ -518,10 +652,8 @@
     renderList,
     renderPageDetail,
     renderEditor,
-    renderSearch,
     renderRuns,
     renderRunDetail,
-    label,
     reagentRowHtml,
     readReagentCompositionFromDOM
   };
