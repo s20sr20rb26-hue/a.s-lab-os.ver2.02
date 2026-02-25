@@ -1,16 +1,21 @@
-// js/store.js（localStorage保存 + 手動Export/Import）
+// js/store.js（Cell対応 + 手動Export/Import）
 (function () {
   const KEY = "lab_os_v1";
 
   function uuid() {
     return "id_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
   }
-
   function now() { return Date.now(); }
 
   function load() {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const obj = JSON.parse(raw);
+      // 互換：古いデータに不足があれば補う
+      if (!Array.isArray(obj.pages)) obj.pages = [];
+      if (!Array.isArray(obj.runs)) obj.runs = [];
+      return obj;
+    }
 
     const seed = {
       pages: [
@@ -27,19 +32,12 @@ TMZ処理での反応を見る。
 ## 準備物
 - [[TMZ 50mM (DMSO)]]
 - 培地、6well、PBS
-- 染色液（必要なら [[染色液]] として作る）
 
 ## 手順
 1. 細胞状態確認
-2. 濃度系列に合わせてTMZ添加
+2. TMZ添加
 3. 培養（インキュベート）
 4. 染色
-
-## インキュベート/待ち
-- 例：24h（37℃ 5%CO2）
-
-## 注意
-- DMSO vehicleを揃える
 `,
           updatedAt: now(),
           favorite: true
@@ -53,7 +51,6 @@ TMZ処理での反応を見る。
           body:
 `## 調製法
 - 溶媒：DMSO
-- 遮光などはラボルールに合わせて
 `,
           metaReagent: {
             composition: [
@@ -68,16 +65,13 @@ TMZ処理での反応を見る。
           id: uuid(),
           type: "duty",
           title: "ピペット洗浄",
-          aliases: ["pipette wash"],
+          aliases: [],
           tags: ["Duty"],
           body:
 `## 手順
 1.
 2.
 3.
-
-## 注意
-- 
 `,
           updatedAt: now(),
           favorite: false
@@ -102,6 +96,10 @@ TMZ処理での反応を見る。
       .sort((a, b) => (b.favorite - a.favorite) || (b.updatedAt - a.updatedAt));
   }
 
+  function listAllPages() {
+    return db.pages.slice().sort((a,b)=> b.updatedAt - a.updatedAt);
+  }
+
   function getPage(id) {
     return db.pages.find(p => p.id === id) || null;
   }
@@ -110,8 +108,8 @@ TMZ処理での反応を見る。
     const key = (name || "").trim().toLowerCase();
     if (!key) return null;
     return db.pages.find(p =>
-      p.title.toLowerCase() === key ||
-      (p.aliases || []).some(a => a.toLowerCase() === key)
+      (p.title || "").toLowerCase() === key ||
+      (p.aliases || []).some(a => (a || "").toLowerCase() === key)
     ) || null;
   }
 
@@ -126,6 +124,11 @@ TMZ処理での反応を見る。
 
   function deletePage(id) {
     db.pages = db.pages.filter(p => p.id !== id);
+    // run側の参照は残してもいいけど、見栄え的に外す
+    db.runs.forEach(r => {
+      if (r.cellId === id) r.cellId = null;
+      if (r.protocolId === id) r.protocolId = null;
+    });
     save(db);
   }
 
@@ -134,7 +137,9 @@ TMZ処理での反応を見る。
     if (!s) return [];
     return db.pages
       .filter(p => {
-        const hay = [p.title, ...(p.aliases || []), ...(p.tags || []), p.body].join("\n").toLowerCase();
+        const hay = [
+          p.title, ...(p.aliases || []), ...(p.tags || []), p.body
+        ].join("\n").toLowerCase();
         return hay.includes(s);
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -143,6 +148,13 @@ TMZ処理での反応を見る。
   // Runs
   function listRuns() {
     return db.runs.slice().sort((a, b) => b.startedAt - a.startedAt);
+  }
+
+  function listRunsByCellId(cellId) {
+    return db.runs
+      .filter(r => r.cellId === cellId)
+      .slice()
+      .sort((a,b)=> b.startedAt - a.startedAt);
   }
 
   function getRun(id) {
@@ -178,11 +190,9 @@ TMZ処理での反応を見る。
 
   window.Store = {
     uuid, now,
-    listPages, getPage, upsertPage, deletePage,
+    listPages, listAllPages, getPage, upsertPage, deletePage,
     findPageByTitleOrAlias, search,
-
-    listRuns, getRun, updateRun, deleteRun,
-
+    listRuns, listRunsByCellId, getRun, updateRun, deleteRun,
     exportAll, importAll
   };
 })();
