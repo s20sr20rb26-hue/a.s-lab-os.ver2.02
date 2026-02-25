@@ -365,14 +365,22 @@
 
   // Export / Import（手動同期）
   btnExport?.addEventListener("click", () => {
-    const data = Store.exportAll();
-    if (!data) return alert("データがありません");
-    const json = JSON.stringify(data, null, 2);
-    const w = window.open();
-    if (!w) return alert("ポップアップがブロックされたかも。設定で許可してもう一回");
-    w.document.write(`<pre>${json.replaceAll("<","&lt;")}</pre>`);
-    w.document.close();
-  });
+  const data = Store.exportAll();
+  if (!data) return alert("データがありません");
+
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "lab_os_backup.json";
+  document.body.appendChild(a);
+  a.click();
+
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
 
   fileImport?.addEventListener("change", async () => {
     const file = fileImport.files?.[0];
@@ -396,3 +404,4 @@
   window.addEventListener("hashchange", navigate);
   navigate();
 })();
+
