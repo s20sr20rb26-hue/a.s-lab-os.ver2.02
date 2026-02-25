@@ -372,13 +372,24 @@
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
 
+  // ▼ 日付生成
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const filename =
+    `lab_os_backup_${now.getFullYear()}`
+    + `${pad(now.getMonth()+1)}`
+    + `${pad(now.getDate())}_`
+    + `${pad(now.getHours())}`
+    + `${pad(now.getMinutes())}`
+    + `${pad(now.getSeconds())}.json`;
+
   const a = document.createElement("a");
   a.href = url;
-  a.download = "lab_os_backup.json";
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
-
   document.body.removeChild(a);
+
   URL.revokeObjectURL(url);
 });
 
@@ -404,4 +415,5 @@
   window.addEventListener("hashchange", navigate);
   navigate();
 })();
+
 
