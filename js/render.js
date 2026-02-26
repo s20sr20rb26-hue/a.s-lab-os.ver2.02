@@ -212,78 +212,108 @@
     const tags = (p.tags || []).map(t => `<span class="pill">${escapeHtml(t)}</span>`).join("");
 
     // Cell detail
-    if (p.type === "cell") {
-      const meta = getCellMeta(p);
-      const runs = Store.listRunsByCellId(p.id);
+  if (p.type === "cell") {
+  const meta = getCellMeta(p);
+  const runs = Store.listRunsByCellId(p.id);
 
-      const runsHtml = runs.length ? `
-        <div class="list">
-          ${runs.map(r => `
-            <div class="card">
-              <h3><a href="#/run/${r.id}">${escapeHtml(r.protocolTitleSnapshot || "Run")}</a></h3>
-              <div class="meta">
-                <span>${r.finishedAt ? "完了" : "進行中"}</span>
-                <span>開始: ${fmtHM(r.startedAt)}</span>
-              </div>
-              <div class="small">${escapeHtml(r.notes || "")}</div>
-            </div>
+  // 直近3件だけ（プレビュー用）
+  const recent = (meta.passages || []).slice(0, 3);
+
+  const passagePreview = recent.length
+    ? `
+      <div style="overflow-x:auto;">
+        <table cellpadding="6">
+          <tr><th>#</th><th>日時</th><th>メモ</th></tr>
+          ${recent.map((x, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>${fmtHM(x.at || Date.now())}</td>
+              <td>${escapeHtml(x.note || "")}</td>
+            </tr>
           `).join("")}
-        </div>
-      ` : `<div class="small">この細胞に紐付いたRunはまだありません（Run詳細で細胞を選ぶと紐付きます）</div>`;
+        </table>
+      </div>
+      <div class="small">※ 直近3件のみ表示。全部見る/編集する場合は下の「継代（全件/編集）」を開く。</div>
+    `
+    : `<div class="small">まだ継代記録がありません（下の「継代（全件/編集）」から追加できます）</div>`;
 
-      const html = `
-        <div class="row">
-          <div>
-            <h2>${escapeHtml(p.title)}</h2>
-            <div class="meta">
-              <span>${label(p.type)}</span>
-              <span>更新: ${fmtTime(p.updatedAt)}</span>
+  const runsHtml = runs.length ? `
+    <div class="list">
+      ${runs.map(r => `
+        <div class="card">
+          <h3><a href="#/run/${r.id}">${escapeHtml(r.protocolTitleSnapshot || "Run")}</a></h3>
+          <div class="meta">
+            <span>${r.finishedAt ? "完了" : "進行中"}</span>
+            <span>開始: ${fmtHM(r.startedAt)}</span>
+          </div>
+          <div class="small">${escapeHtml(r.notes || "")}</div>
+        </div>
+      `).join("")}
+    </div>
+  ` : `<div class="small">この細胞に紐付いたRunはまだありません（Run詳細で細胞を選ぶと紐付きます）</div>`;
+
+  const html = `
+    <div class="row">
+      <div>
+        <h2>${escapeHtml(p.title)}</h2>
+        <div class="meta">
+          <span>${label(p.type)}</span>
+          <span>更新: ${fmtTime(p.updatedAt)}</span>
+        </div>
+        <div class="pills">${tags}</div>
+      </div>
+      <div style="text-align:right; min-width:240px;">
+        <button class="btn" id="btnFav">${p.favorite ? "★ お気に入り解除" : "☆ お気に入り"}</button>
+        <a class="btn" href="#/edit/${p.id}">編集</a>
+        <button class="btn" id="btnDel">削除</button>
+      </div>
+    </div>
+
+    <hr>
+
+    <div id="pageBody">
+      <div class="card">
+        <h3>【細胞情報】</h3>
+        ${cellInfoTable(meta)}
+      </div>
+
+      <div class="card">
+        <h3>【継代（直近3回）】</h3>
+        ${passagePreview}
+      </div>
+
+      <!-- 折りたたみ：開いたときだけ全件＆編集UI -->
+      <details class="card details">
+        <summary class="details-summary">継代（全件/編集）を開く</summary>
+
+        <div style="margin-top:12px;">
+          <div class="row">
+            <label>日時（追加用）
+              <input id="passAt" type="datetime-local" />
+            </label>
+            <label>メモ（追加用）
+              <input id="passNote" placeholder="例：1:5、状態良い など" />
+            </label>
+            <div style="align-self:end; text-align:right; min-width:180px;">
+              <button class="btn primary" id="btnAddPass">＋継代記録</button>
             </div>
-            <div class="pills">${tags}</div>
           </div>
-          <div style="text-align:right; min-width:240px;">
-            <button class="btn" id="btnFav">${p.favorite ? "★ お気に入り解除" : "☆ お気に入り"}</button>
-            <a class="btn" href="#/edit/${p.id}">編集</a>
-            <button class="btn" id="btnDel">削除</button>
-          </div>
-        </div>
 
+          ${passageTable(meta.passages)}
+          <div class="small">※ 行を編集したら「保存」を押して反映</div>
+        </div>
+      </details>
+
+      <div class="card">
+        <h3>【実験】</h3>
+        <div class="small">Run（実験記録）側で「使用細胞」を選ぶと、ここに自動で一覧が出ます。</div>
         <hr>
-
-        <div id="pageBody">
-          <div class="card">
-            <h3>【細胞情報】</h3>
-            ${cellInfoTable(meta)}
-          </div>
-
-          <div class="card">
-            <h3>【継代】</h3>
-            <div class="row">
-              <label>日時（追加用）
-                <input id="passAt" type="datetime-local" />
-              </label>
-              <label>メモ（追加用）
-                <input id="passNote" placeholder="例：1:5、状態良い など" />
-              </label>
-              <div style="align-self:end; text-align:right; min-width:180px;">
-                <button class="btn primary" id="btnAddPass">＋継代記録</button>
-              </div>
-            </div>
-            ${passageTable(meta.passages)}
-            <div class="small">※ 行を編集したら「保存」を押して反映</div>
-          </div>
-
-          <div class="card">
-            <h3>【実験】</h3>
-            <div class="small">Run（実験記録）側で「使用細胞」を選ぶと、ここに自動で一覧が出ます。</div>
-            <hr>
-            ${runsHtml}
-          </div>
-        </div>
-      `;
-      return { html, page: p };
-    }
-
+        ${runsHtml}
+      </div>
+    </div>
+  `;
+  return { html, page: p };
+}
     // Reagent detail
     if (p.type === "reagent") {
       const meta = getReagentMeta(p);
